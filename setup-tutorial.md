@@ -143,3 +143,15 @@ If you want, I can **also add a minimal backtest Python skeleton** with `src/bac
 
 Do you want me to do that next?
 
+
+For your venv to appear as an option inside any notebook
+
+```
+python -m ipykernel install --user --name=mbte --display-name "Python (mbte)"
+```
+
+Once you have a pyproject.toml file, install your project in editable mode
+```
+pip install -e .
+```
+You don't need to re-run after updating pip-tools package
