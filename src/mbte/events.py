@@ -32,6 +32,16 @@ class SignalEvent(Event):
 ##################### Execution ######################
 
 @dataclass(frozen=True)
+class PortfolioConstruction(Event):
+    qty: int
+
+
+@dataclass(frozen=True)
+class PortfolioLiquidation(Event):
+    pass
+
+
+@dataclass(frozen=True)
 class OrderEvent(Event):
     price: float | None
     qty: int

@@ -1,12 +1,40 @@
 '''
 Event Processing related implementations
 '''
-
+from datetime import datetime
 from abc import ABC, abstractmethod 
-from mbte.clock import Clock
+from mbte.clock import SimulationClock
 from mbte.events import Event, InternalSchedulingEvent
 import heapq
-from collections import namedtuple
+from typing import Generic, TypeVar, NamedTuple
+
+K = TypeVar('K')
+V = TypeVar('V')
+
+class MbtePriorityQueue(Generic[K, V]):
+    '''
+    Docstring for MbtePriorityQueue
+    
+    :var Illustration: Description
+    :var Implementation: Description
+    '''
+    def __init__(self):
+        self._queue: list[tuple[K, V]] = []
+
+    def add(self, key: K, value: V):
+        heapq.heappush(self._queue, (key, value))
+
+    def pop(self) -> tuple[K, V] | None:
+        if self._queue:
+            return heapq.heappop(self._queue)
+        else:
+            return None
+        
+    def peek(self) -> tuple[K, V] | None:
+        if self._queue:
+            return self._queue[0]
+        else:
+            return None
 
 
 class EventStore(ABC):
@@ -52,38 +80,18 @@ class EventStore(ABC):
 
 class EventProcessor(ABC):
     @abstractmethod
-    def process(event: Event):
+    def process(self, event: Event):
         pass
 
 
-class MbtePriorityQueue(object):
-    '''
-    Docstring for MbtePriorityQueue
-    
-    :var Illustration: Description
-    :var Implementation: Description
-    '''
-    def __init__(self):
-        self._queue = []
-
-    def add(self, key, value):
-        heapq.heappush(self._queue, (key, value))
-
-    def pop(self):
-        if self._queue:
-            return heapq.heappop(self._queue)
-        else:
-            return None
-        
-    def peek(self):
-        if self._queue:
-            return self._queue[0]
-        else:
-            return None
+class EventStoreItem(NamedTuple):
+    event: Event
+    event_store: EventStore
 
 
-EventStoreItem = namedtuple('EventStoreItem', ['event', 'event_store'])
-ScheduledItem = namedtuple('ScheduleItem', ['event', 'schedule_id'])
+class ScheduledItem(NamedTuple):
+    event: Event
+    schedule_id: int
 
 
 class EventSequencerError(RuntimeError):
@@ -106,7 +114,7 @@ class EventSequencer(object):
     in the following sequence in a simulation run:
     Market Data: 
         MD-1: 2025-12-24 9:30AM  Market Open Price
-        MD-2: 2025-12-24 1:30PM  Market Close Price
+        MD-2: 2025-12-24 1:00PM  Market Close Price
     Portfolio Event Data:
         P-1: 2025-12-24 9:35AM  Build Portfolio
         P-2: 2025-12-25 1:25PM  Liquidate Portfolio
@@ -129,7 +137,7 @@ class EventSequencer(object):
     
     def __init__(
             self,
-            sim_clock: Clock, 
+            sim_clock: SimulationClock, 
             event_stores: list[EventStore], 
             event_processor: EventProcessor
     ):
@@ -137,9 +145,9 @@ class EventSequencer(object):
         self._event_stores = list(event_stores)
         self._event_processor = event_processor
 
-        self._merger_queue = MbtePriorityQueue()
-        self._internal_scheduling_id = 1
-        self._scheduled_id_set = set()
+        self._merger_queue = MbtePriorityQueue[datetime, EventStoreItem | ScheduledItem]()
+        self._internal_scheduling_id: int = 1
+        self._scheduled_id_set: set[int] = set()
 
         self._init_queue()
 
@@ -151,7 +159,7 @@ class EventSequencer(object):
 
     def run(self):
         # keep running event by event util it is done
-        while self._run_once():
+        while self.run_once():
             pass
 
     def _init_queue(self):
@@ -173,7 +181,7 @@ class EventSequencer(object):
         )
         return True
 
-    def _get_schedule_id(self):
+    def _get_schedule_id(self) -> int:
         ret = self._internal_scheduling_id
         self._internal_scheduling_id += 1
         return ret
@@ -184,23 +192,22 @@ class EventSequencer(object):
             ScheduledItem(event=event, schedule_id=self._get_schedule_id())
         )
 
-    def _run_once(self) -> bool:
+    def run_once(self) -> bool:
         head = self._merger_queue.pop()
         if head is None:
             return False
         
-        if isinstance(head, ScheduledItem):
-            self._process_event(head.event)
-            self._scheduled_id_set.remove(head.schedule_id)
-        elif isinstance(head, EventStoreItem):
-            self._process_event(head.event)
-            self._replenish_from_store(head.event_store)               
-        else:
-            return False
-        
-    def _process_event(self, event: Event):
-        if self._sim_clock.now() > event.timestamp:
-            return 
-        self._sim_clock.set_time(event.timestamp)
-        self._event_processor.process(event)
-        
+        timestamp, item = head
+
+        # advance time if it sees a newer timestamp
+        if self._sim_clock.now() < timestamp:
+            self._sim_clock.set_time(timestamp)
+            
+        if isinstance(item, ScheduledItem):
+            self._event_processor.process(item.event)
+            self._scheduled_id_set.remove(item.schedule_id)
+            return True
+        else: # isinstance(item, EventStoreItem)
+            self._event_processor.process(item.event)
+            self._replenish_from_store(item.event_store)
+            return True

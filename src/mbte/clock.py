@@ -1,11 +1,11 @@
 '''
 Clock for simulation owns the current time of the system.
 '''
-from datetime import datetime, timedelta
+from datetime import datetime
 
-class Clock(object):
+class SimulationClock(object):
     def __init__(self, init_time: datetime):
-        self._time = datetime
+        self._time = init_time
 
     def set_time(self, new_time: datetime):
         if new_time > self._time:
