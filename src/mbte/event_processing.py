@@ -182,6 +182,8 @@ class EventSequencer(EventScheduler):
         return self._remove_scheduled_id(schedule_id)
 
     def run(self):
+        if self._event_processor is None:
+            return
         # keep running event by event util it is done
         while self.advance():
             pass
@@ -218,6 +220,8 @@ class EventSequencer(EventScheduler):
         return ret
 
     def advance(self) -> bool:
+        assert self._event_processor is not None
+        
         head = self._merger_queue.pop()
         if head is None:
             return False
