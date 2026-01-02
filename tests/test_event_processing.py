@@ -99,6 +99,14 @@ class MockStandardEventProcessor(EventProcessor):
         return self._events
 
 
+class MockInternalSchedulingEvent1(InternalSchedulingEvent):
+    pass
+
+
+class MockInternalSchedulingEvent2(InternalSchedulingEvent):
+    pass
+
+
 class MockMixedEventProcessor(MockStandardEventProcessor):
     '''
     MockMixedEventProcessor creates a sophisticated scenario with scheduling
@@ -120,14 +128,14 @@ class MockMixedEventProcessor(MockStandardEventProcessor):
         # on InternalSchedulingEvent at 11:00AM, cancel the 11:30AM one
         now = self._clock.now()
         if isinstance(event, PortfolioConstruction):
-            scheduled_event = InternalSchedulingEvent(
+            scheduled_event = MockInternalSchedulingEvent1(
                 timestamp=datetime(now.year, now.month, now.day, 11, 30),
                 symbol=event.symbol,
             )
             scheduled_id = self._scheduler.schedule(scheduled_event)
             self._first_scheduled = (scheduled_event, scheduled_id)
         elif isinstance(event, MarketOpenEvent):
-            scheduled_event = InternalSchedulingEvent(
+            scheduled_event = MockInternalSchedulingEvent2(
                 timestamp=datetime(now.year, now.month, now.day, 11, 0),
                 symbol=event.symbol,
             )
@@ -208,22 +216,22 @@ class TestEventSequencer(object):
     MARKET_DATA_STORE_NAME = 'market-data'
     PORTFOLIO_STORE_NAME = 'portfolio-data'
 
-    INTERNAL_SCHEDULING_EVENTS = [
-        InternalSchedulingEvent(
+    INTERNAL_SCHEDULING_EVENTS: list[InternalSchedulingEvent] = [
+        MockInternalSchedulingEvent1(
             timestamp=datetime(2025, 12, 24, 11, 30),
             symbol='SPY',
         ),
         # later scheduling an event for an earlier time
-        InternalSchedulingEvent(
+        MockInternalSchedulingEvent2(
             timestamp=datetime(2025, 12, 24, 11, 0),
             symbol='SPY',
         ),
-        InternalSchedulingEvent(
+        MockInternalSchedulingEvent1(
             timestamp=datetime(2025, 12, 26, 11, 30),
             symbol='SPY',
         ),
         # later scheduling an event for an earlier time
-        InternalSchedulingEvent(
+        MockInternalSchedulingEvent2(
             timestamp=datetime(2025, 12, 26, 11, 0),
             symbol='SPY',
         ),
