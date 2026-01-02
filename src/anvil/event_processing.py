@@ -5,10 +5,12 @@ from datetime import datetime
 from abc import ABC, abstractmethod 
 import heapq
 from typing import Generic, TypeVar, NamedTuple
+import logging
 
 from anvil.clock import SimulationClock
 from anvil.events import Event, InternalSchedulingEvent
 
+logger = logging.getLogger(__name__)
 
 K = TypeVar('K')
 V = TypeVar('V')
@@ -27,6 +29,7 @@ class MbtePriorityQueue(Generic[K, V]):
     def __init__(self, init_seq: int=0):
         self._seq = init_seq
         self._queue: list[tuple[K, int, V]] = []
+        logger.debug("constructed PQ", extra={'init_seq': init_seq})
 
     def add(self, key: K, value: V):
         self._seq += 1 # leave the init_seq untouched
@@ -161,30 +164,54 @@ class EventSequencer(EventScheduler):
         self._merger_queue = MbtePriorityQueue[datetime, EventStoreItem | ScheduledItem]()
         self._internal_scheduling_id: int = 1
         self._scheduled_id_set: set[int] = set()
+        self._event_count: int = 0
 
         self._init_queue()
+        logger.debug(
+            'constructed EventSequencer', 
+            extra=self._get_extra(),  # type: ignore
+        )
 
     def set_processor(self, event_processor: EventProcessor):
         self._event_processor = event_processor
 
     def schedule(self, internal_event: InternalSchedulingEvent) -> int:
-        schedule_id = self._get_schedule_id()
+        scheduled_id = self._get_schedule_id()
         self._merger_queue.add(
             internal_event.timestamp,
-            ScheduledItem(event=internal_event, schedule_id=schedule_id),
+            ScheduledItem(event=internal_event, schedule_id=scheduled_id),
         )
-        self._scheduled_id_set.add(schedule_id)
-        return schedule_id
+        self._scheduled_id_set.add(scheduled_id)
+        logger.debug(
+            'scheduled internal event',
+            extra={
+                'scheduled_at': internal_event.timestamp, 
+                'scheduled_id': scheduled_id
+            },
+        )
+        return scheduled_id
     
     def cancel(self, schedule_id: int) -> bool:
+        logger.debug(
+            'removing interal event', 
+            extra=self._get_extra(scheduled_id=schedule_id), # type: ignore
+        )
         return self._remove_scheduled_id(schedule_id)
 
     def run(self):
         if self._event_processor is None:
+            logger.warning(
+                'cannot run without event processor',
+                extra=self._get_extra(), # type: ignore
+            )
             return
         # keep running event by event util it is done
         while self.advance():
             pass
+        logger.debug(
+            'finished event sequencer run',
+            extra=self._get_extra(event_count=self._event_count), # type: ignore
+        )
 
     def _init_queue(self):
         for event_store in self._event_stores:
@@ -236,12 +263,14 @@ class EventSequencer(EventScheduler):
             if item.schedule_id in self._scheduled_id_set:
                 self._advance_clock(timestamp)
                 self._event_processor.process(item.event)
+                self._event_count += 1
                 self._remove_scheduled_id(item.schedule_id)
             return True
         else: # isinstance(item, EventStoreItem)
             # process the event (still in the queue) and remove it
             self._advance_clock(timestamp)
             self._event_processor.process(item.event)
+            self._event_count += 1
             item.event_store.pop()
 
             # prepare the next event in the queue, without removing it
@@ -252,3 +281,8 @@ class EventSequencer(EventScheduler):
         # advance time if it sees a newer timestamp
         if self._sim_clock.now() < timestamp:
             self._sim_clock.set_time(timestamp)
+
+    def _get_extra(self, **kwargs): # type: ignore
+        d = {'now': self._sim_clock.now()}
+        d.update(kwargs) # type: ignore
+        return d
